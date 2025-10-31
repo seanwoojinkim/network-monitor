@@ -376,13 +376,15 @@
       }, []);
 
       useEffect(() => {
-        if (autoRefresh) {
+        if (autoRefresh && !scanning) {
           const intervalId = setInterval(() => {
-            quickScan();
+            if (!scanning) {
+              quickScan();
+            }
           }, refreshInterval);
           return () => clearInterval(intervalId);
         }
-      }, [autoRefresh, refreshInterval]);
+      }, [autoRefresh, refreshInterval, scanning]);
 
       async function fetchNetworkInfo() {
         try {

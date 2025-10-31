@@ -4,6 +4,7 @@ const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 const os = require('os');
+const path = require('path');
 const bonjour = require('bonjour')();
 const { Client } = require('node-ssdp');
 
@@ -12,7 +13,114 @@ const PORT = 3001;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+
+// Set public directory path (works in both dev and packaged app)
+const publicPath = path.join(__dirname, 'public');
+console.log('Serving static files from:', publicPath);
+app.use(express.static(publicPath));
+
+// Security: IP validation to prevent command injection
+function isValidIP(ip) {
+  if (!ip || typeof ip !== 'string') {
+    return false;
+  }
+
+  // IPv4 format validation: xxx.xxx.xxx.xxx where xxx is 0-255
+  const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+  const match = ip.match(ipv4Regex);
+
+  if (!match) {
+    return false;
+  }
+
+  // Validate each octet is 0-255
+  for (let i = 1; i <= 4; i++) {
+    const octet = parseInt(match[i], 10);
+    if (octet < 0 || octet > 255) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// Concurrency control: batch size for network scans
+const BATCH_SIZE = 20;
+
+// DeviceCache class for TTL-based caching to prevent memory leaks
+class DeviceCache {
+  constructor(ttl = 300000) { // Default 5 minutes
+    this.cache = new Map();
+    this.ttl = ttl;
+  }
+
+  set(key, value) {
+    this.cache.set(key, {
+      value: value,
+      timestamp: Date.now()
+    });
+  }
+
+  get(key) {
+    const entry = this.cache.get(key);
+    if (!entry) {
+      return null;
+    }
+
+    // Check if expired
+    if (Date.now() - entry.timestamp > this.ttl) {
+      this.cache.delete(key);
+      return null;
+    }
+
+    return entry.value;
+  }
+
+  getAll() {
+    const now = Date.now();
+    const result = new Map();
+
+    for (const [key, entry] of this.cache.entries()) {
+      if (now - entry.timestamp <= this.ttl) {
+        result.set(key, entry.value);
+      }
+    }
+
+    return result;
+  }
+
+  cleanup() {
+    const now = Date.now();
+    let removed = 0;
+
+    for (const [key, entry] of this.cache.entries()) {
+      if (now - entry.timestamp > this.ttl) {
+        this.cache.delete(key);
+        removed++;
+      }
+    }
+
+    return removed;
+  }
+
+  size() {
+    // Return only non-expired entries count
+    const now = Date.now();
+    let count = 0;
+
+    for (const [key, entry] of this.cache.entries()) {
+      if (now - entry.timestamp <= this.ttl) {
+        count++;
+      }
+    }
+
+    return count;
+  }
+
+  delete(key) {
+    return this.cache.delete(key);
+  }
+}
 
 // Get local IP address
 function getLocalIP() {
@@ -581,11 +689,11 @@ function getVendor(mac) {
   }
 }
 
-// Store Bonjour-discovered devices
-const bonjourDevices = new Map();
+// Store Bonjour-discovered devices with TTL-based caching
+const bonjourDevices = new DeviceCache(300000); // 5 minutes TTL
 
-// Store SSDP-discovered devices (Bambu Labs printers)
-const ssdpDevices = new Map();
+// Store SSDP-discovered devices (Bambu Labs printers) with TTL-based caching
+const ssdpDevices = new DeviceCache(300000); // 5 minutes TTL
 
 // Start Bonjour browser
 function startBonjourDiscovery() {
@@ -662,6 +770,16 @@ function startSSDPDiscovery() {
 startBonjourDiscovery();
 startSSDPDiscovery();
 
+// Periodic cleanup of device caches to prevent memory leaks
+setInterval(() => {
+  const bonjourRemoved = bonjourDevices.cleanup();
+  const ssdpRemoved = ssdpDevices.cleanup();
+  const bonjourSize = bonjourDevices.size();
+  const ssdpSize = ssdpDevices.size();
+
+  console.log(`Device cache cleanup: Bonjour=${bonjourSize} entries (removed ${bonjourRemoved}), SSDP=${ssdpSize} entries (removed ${ssdpRemoved})`);
+}, 60000); // Run every 60 seconds
+
 // Parse ARP table
 async function getARPTable() {
   try {
@@ -675,6 +793,12 @@ async function getARPTable() {
       if (match) {
         const ip = match[1];
         const mac = match[2];
+
+        // Security: validate parsed IP address
+        if (!isValidIP(ip)) {
+          console.warn(`[Security] Invalid IP address rejected in getARPTable: ${ip}`);
+          continue;
+        }
 
         // Skip invalid MAC addresses
         if (mac === 'ff:ff:ff:ff:ff:ff' || mac === '(incomplete)') {
@@ -708,6 +832,12 @@ async function getARPTable() {
 
 // Try to resolve hostname
 async function resolveHostname(ip) {
+  // Security: validate IP before passing to shell command
+  if (!isValidIP(ip)) {
+    console.warn(`[Security] Invalid IP address rejected in resolveHostname: ${ip}`);
+    return null;
+  }
+
   try {
     const { stdout } = await execAsync(`host ${ip}`, { timeout: 2000 });
     const match = stdout.match(/pointer\s+(.+)\./);
@@ -721,26 +851,48 @@ async function resolveHostname(ip) {
 async function scanSubnet(baseIP) {
   const subnet = baseIP.substring(0, baseIP.lastIndexOf('.'));
   const devices = [];
-  
+
   console.log(`Scanning subnet ${subnet}.0/24...`);
-  
-  // Ping sweep to populate ARP cache
-  const pingPromises = [];
+
+  // Generate all IPs to scan and validate them
+  const ipsToScan = [];
   for (let i = 1; i <= 254; i++) {
     const ip = `${subnet}.${i}`;
-    pingPromises.push(
+    // Security: validate IP before using in command
+    if (isValidIP(ip)) {
+      ipsToScan.push(ip);
+    } else {
+      console.warn(`[Security] Invalid IP address rejected in scanSubnet: ${ip}`);
+    }
+  }
+
+  // Batch processing to prevent overwhelming system resources
+  console.log(`Processing ${ipsToScan.length} IPs in batches of ${BATCH_SIZE}...`);
+
+  for (let i = 0; i < ipsToScan.length; i += BATCH_SIZE) {
+    const batch = ipsToScan.slice(i, i + BATCH_SIZE);
+    const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+    const totalBatches = Math.ceil(ipsToScan.length / BATCH_SIZE);
+
+    console.log(`Processing batch ${batchNumber}/${totalBatches} (${batch.length} IPs)...`);
+
+    // Ping sweep for this batch to populate ARP cache
+    const pingPromises = batch.map(ip =>
       execAsync(`ping -c 1 -W 1 ${ip}`, { timeout: 2000 })
         .then(() => ({ ip, alive: true }))
         .catch(() => ({ ip, alive: false }))
     );
+
+    await Promise.all(pingPromises);
   }
-  
-  await Promise.all(pingPromises);
-  
+
+  console.log('Ping sweep complete, reading ARP table...');
+
   // Now read ARP table
   const arpDevices = await getARPTable();
 
   // Try to get hostnames
+  console.log(`Resolving hostnames for ${arpDevices.length} devices...`);
   for (let device of arpDevices) {
     const hostname = await resolveHostname(device.ip);
     if (hostname) {
@@ -800,7 +952,30 @@ app.get('/api/quick-scan', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Network Scanner running on http://localhost:${PORT}`);
-  console.log(`Local IP: ${getLocalIP()}`);
-});
+function startServer() {
+  const server = app.listen(PORT, (error) => {
+    if (error) {
+      console.error(`Failed to start server on port ${PORT}:`, error.message);
+      throw error;
+    }
+    console.log(`Network Scanner running on http://localhost:${PORT}`);
+    console.log(`Local IP: ${getLocalIP()}`);
+  });
+
+  server.on('error', (error) => {
+    console.error('Server error:', error.message);
+    if (error.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use. Please close the other application and try again.`);
+    }
+  });
+
+  return server;
+}
+
+// Only start server if run directly (not required as module)
+if (require.main === module) {
+  startServer();
+}
+
+// Export for use in Electron
+module.exports = { app, startServer, PORT };

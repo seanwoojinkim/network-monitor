@@ -1,9 +1,8 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
 
 let mainWindow;
-let serverProcess;
+let server;
 
 // Prevent multiple instances
 const gotTheLock = app.requestSingleInstanceLock();
@@ -32,35 +31,58 @@ function createWindow() {
     title: 'Network Scanner'
   });
 
-  // Wait a moment for server to start
+  // Open DevTools in development
+  if (!app.isPackaged) {
+    mainWindow.webContents.openDevTools();
+  }
+
+  // Load URL after short delay (server is already ready)
   setTimeout(() => {
     mainWindow.loadURL('http://localhost:3001');
-  }, 2000);
+  }, 500);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
 
-function startServer() {
-  // Use process.execPath to get the node binary path
-  serverProcess = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
-    cwd: __dirname,
-    env: { ...process.env, PATH: process.env.PATH }
-  });
+async function startServer() {
+  return new Promise((resolve, reject) => {
+    try {
+      // Import and start the Express server in-process
+      const serverModule = require('./server.js');
+      server = serverModule.startServer();
 
-  serverProcess.stdout.on('data', (data) => {
-    console.log(`Server: ${data}`);
-  });
+      // Wait for server to be listening
+      server.on('listening', () => {
+        console.log('Server started successfully');
+        resolve();
+      });
 
-  serverProcess.stderr.on('data', (data) => {
-    console.error(`Server Error: ${data}`);
+      server.on('error', (error) => {
+        console.error('Server error:', error);
+        reject(error);
+      });
+    } catch (error) {
+      console.error('Error starting server:', error);
+      reject(error);
+    }
   });
 }
 
-app.on('ready', () => {
-  startServer();
-  createWindow();
+app.on('ready', async () => {
+  try {
+    await startServer();
+    createWindow();
+  } catch (error) {
+    console.error('Failed to start application:', error);
+    const { dialog } = require('electron');
+    dialog.showErrorBox(
+      'Startup Error',
+      `Failed to start Network Scanner:\n\n${error.message}\n\nThe application will now quit.`
+    );
+    app.quit();
+  }
 });
 
 app.on('window-all-closed', () => {
@@ -76,7 +98,10 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', () => {
-  if (serverProcess) {
-    serverProcess.kill();
+  if (server && server.listening) {
+    console.log('Shutting down server...');
+    server.close(() => {
+      console.log('Server closed successfully');
+    });
   }
 });
