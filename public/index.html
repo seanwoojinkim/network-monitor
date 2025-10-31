@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Network Scanner</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      background: #ffffff;
+      min-height: 100vh;
+      padding: 0;
+      color: #000000;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 40px;
+    }
+
+    .header {
+      margin-bottom: 40px;
+      border-bottom: 2px solid #000000;
+      padding-bottom: 20px;
+    }
+
+    .header h1 {
+      font-size: 24px;
+      font-weight: 500;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+
+    .header p {
+      font-size: 13px;
+      color: #666666;
+      font-weight: 400;
+    }
+
+    .card {
+      background: #ffffff;
+      border: none;
+      padding: 0;
+      margin-bottom: 0;
+    }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    .filters {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+      padding: 16px 0;
+      border-top: 1px solid #e0e0e0;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .filter-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 500;
+      color: #666666;
+    }
+
+    select {
+      padding: 8px 12px;
+      border: 2px solid #000000;
+      background: #ffffff;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    select:hover {
+      background: #ffff00;
+    }
+
+    select:focus {
+      outline: none;
+      background: #ffff00;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border: 2px solid #000000;
+      background: #ffffff;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    }
+
+    .btn-primary {
+      background: #ffff00;
+      color: #000000;
+      border-color: #000000;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #000000;
+      color: #ffff00;
+    }
+
+    .btn-secondary {
+      background: #ffffff;
+      color: #000000;
+      border-color: #000000;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: #000000;
+      color: #ffffff;
+    }
+
+    .btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .status-bar {
+      display: flex;
+      gap: 40px;
+      padding: 16px 0;
+      background: transparent;
+      border-top: 1px solid #000000;
+      border-bottom: 1px solid #000000;
+      margin-bottom: 30px;
+    }
+
+    .status-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .status-label {
+      color: #666666;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 500;
+    }
+
+    .status-value {
+      color: #000000;
+      font-weight: 500;
+      font-size: 16px;
+      font-family: monospace;
+    }
+
+    .device-list {
+      border: 2px solid #000000;
+    }
+
+    .device-list-header {
+      display: grid;
+      grid-template-columns: 50px 140px 150px 160px 200px 1fr 100px;
+      padding: 12px 20px;
+      background: #000000;
+      color: #ffffff;
+      font-size: 10px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border-bottom: 2px solid #000000;
+    }
+
+    .device-item {
+      display: grid;
+      grid-template-columns: 50px 140px 150px 160px 200px 1fr 100px;
+      padding: 16px 20px;
+      border-bottom: 1px solid #e0e0e0;
+      transition: all 0.1s ease;
+      align-items: center;
+      background: #ffffff;
+    }
+
+    .device-item:last-child {
+      border-bottom: none;
+    }
+
+    .device-item:hover {
+      background: #ffff00;
+    }
+
+    .device-number {
+      font-family: monospace;
+      font-size: 12px;
+      color: #999999;
+    }
+
+    .device-ip {
+      font-family: monospace;
+      font-size: 13px;
+      font-weight: 500;
+      color: #000000;
+      cursor: pointer;
+      transition: all 0.1s ease;
+    }
+
+    .device-ip:hover {
+      background: #ffff00;
+      color: #000000;
+    }
+
+    .device-mac {
+      font-family: monospace;
+      font-size: 13px;
+      color: #666666;
+      cursor: pointer;
+      transition: all 0.1s ease;
+    }
+
+    .device-mac:hover {
+      background: #ffff00;
+      color: #000000;
+    }
+
+    .copied-tooltip {
+      position: fixed;
+      background: #000000;
+      color: #ffff00;
+      padding: 8px 12px;
+      border-radius: 0;
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      pointer-events: none;
+      z-index: 1000;
+      animation: fadeInOut 1.5s ease;
+    }
+
+    @keyframes fadeInOut {
+      0% { opacity: 0; transform: translateY(10px); }
+      20% { opacity: 1; transform: translateY(0); }
+      80% { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(-10px); }
+    }
+
+    .device-hostname {
+      font-size: 13px;
+      color: #000000;
+    }
+
+    .device-vendor {
+      font-size: 12px;
+      color: #666666;
+    }
+
+    .device-bonjour {
+      font-size: 13px;
+      color: #000000;
+      font-weight: 500;
+    }
+
+    .status-indicator {
+      width: 8px;
+      height: 8px;
+      display: inline-block;
+      border: 1px solid #000000;
+    }
+
+    .status-online {
+      background: #00ff00;
+      border-color: #00cc00;
+    }
+
+    .status-unknown {
+      background: #ffff00;
+      border-color: #cccc00;
+    }
+
+    .status-offline {
+      background: #ff0000;
+      border-color: #cc0000;
+    }
+
+    .loader {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #e0e0e0;
+      border-top: 2px solid #000000;
+      border-radius: 0;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 80px 20px;
+      border: 2px solid #000000;
+    }
+
+    .empty-state-icon {
+      font-size: 48px;
+      margin-bottom: 20px;
+      opacity: 0.3;
+    }
+
+    .empty-state h3 {
+      margin-bottom: 8px;
+      color: #000000;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 500;
+    }
+
+    .empty-state p {
+      color: #666666;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function App() {
+      const [devices, setDevices] = useState([]);
+      const [scanning, setScanning] = useState(false);
+      const [localIP, setLocalIP] = useState('');
+      const [lastScan, setLastScan] = useState(null);
+      const [statusFilter, setStatusFilter] = useState('all');
+      const [vendorFilter, setVendorFilter] = useState('all');
+      const [sortBy, setSortBy] = useState('ip');
+      const [copiedTooltip, setCopiedTooltip] = useState(null);
+      const [autoRefresh, setAutoRefresh] = useState(false);
+      const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds default
+
+      useEffect(() => {
+        fetchNetworkInfo();
+      }, []);
+
+      useEffect(() => {
+        if (autoRefresh) {
+          const intervalId = setInterval(() => {
+            quickScan();
+          }, refreshInterval);
+          return () => clearInterval(intervalId);
+        }
+      }, [autoRefresh, refreshInterval]);
+
+      async function fetchNetworkInfo() {
+        try {
+          const response = await fetch('http://localhost:3001/api/network-info');
+          const data = await response.json();
+          setLocalIP(data.localIP);
+        } catch (error) {
+          console.error('Error fetching network info:', error);
+        }
+      }
+
+      async function quickScan() {
+        setScanning(true);
+        try {
+          const response = await fetch('http://localhost:3001/api/quick-scan');
+          const data = await response.json();
+          if (data.success) {
+            setDevices(data.devices);
+            setLastScan(new Date());
+          }
+        } catch (error) {
+          console.error('Error scanning:', error);
+          alert('Error scanning network. Make sure the server is running.');
+        } finally {
+          setScanning(false);
+        }
+      }
+
+      async function fullScan() {
+        setScanning(true);
+        try {
+          const response = await fetch('http://localhost:3001/api/scan');
+          const data = await response.json();
+          if (data.success) {
+            setDevices(data.devices);
+            setLastScan(new Date());
+          }
+        } catch (error) {
+          console.error('Error scanning:', error);
+          alert('Error scanning network. Make sure the server is running.');
+        } finally {
+          setScanning(false);
+        }
+      }
+
+      function formatTime(date) {
+        if (!date) return 'Never';
+        return date.toLocaleTimeString();
+      }
+
+      async function copyToClipboard(text, event) {
+        try {
+          await navigator.clipboard.writeText(text);
+          const rect = event.target.getBoundingClientRect();
+          setCopiedTooltip({
+            text: 'Copied!',
+            x: rect.left + rect.width / 2,
+            y: rect.top - 10
+          });
+          setTimeout(() => setCopiedTooltip(null), 1500);
+        } catch (error) {
+          console.error('Failed to copy:', error);
+        }
+      }
+
+      // Get unique vendors for filter
+      const uniqueVendors = [...new Set(devices.map(d => d.vendor).filter(Boolean))].sort();
+
+      // Filter and sort devices
+      const filteredAndSortedDevices = devices
+        .filter(device => {
+          if (statusFilter !== 'all' && device.status !== statusFilter) return false;
+          if (vendorFilter !== 'all' && device.vendor !== vendorFilter) return false;
+          return true;
+        })
+        .sort((a, b) => {
+          switch (sortBy) {
+            case 'ip':
+              return a.ip.localeCompare(b.ip, undefined, { numeric: true });
+            case 'mac':
+              return a.mac.localeCompare(b.mac);
+            case 'vendor':
+              return (a.vendor || '').localeCompare(b.vendor || '');
+            case 'hostname':
+              return (a.hostname || '').localeCompare(b.hostname || '');
+            default:
+              return 0;
+          }
+        });
+
+      return (
+        <div className="container">
+          <div className="header">
+            <h1>Network Scanner</h1>
+            <p>Local device discovery tool</p>
+          </div>
+
+          <div className="card">
+            <div className="controls">
+              <button
+                className="btn btn-primary"
+                onClick={quickScan}
+                disabled={scanning}
+              >
+                {scanning ? <div className="loader"></div> : null}
+                Quick Scan
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={fullScan}
+                disabled={scanning}
+              >
+                {scanning ? <div className="loader"></div> : null}
+                Full Scan
+              </button>
+              <button
+                className={`btn ${autoRefresh ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setAutoRefresh(!autoRefresh)}
+              >
+                {autoRefresh ? '● Auto-Refresh ON' : '○ Auto-Refresh OFF'}
+              </button>
+              {autoRefresh && (
+                <select value={refreshInterval} onChange={(e) => setRefreshInterval(Number(e.target.value))}>
+                  <option value={10000}>10s</option>
+                  <option value={30000}>30s</option>
+                  <option value={60000}>1m</option>
+                  <option value={300000}>5m</option>
+                </select>
+              )}
+            </div>
+
+            <div className="status-bar">
+              <div className="status-item">
+                <span className="status-label">Local IP</span>
+                <span className="status-value">{localIP || '---'}</span>
+              </div>
+              <div className="status-item">
+                <span className="status-label">Total</span>
+                <span className="status-value">{devices.length}</span>
+              </div>
+              <div className="status-item">
+                <span className="status-label">Showing</span>
+                <span className="status-value">{filteredAndSortedDevices.length}</span>
+              </div>
+              <div className="status-item">
+                <span className="status-label">Last Scan</span>
+                <span className="status-value">{formatTime(lastScan)}</span>
+              </div>
+            </div>
+
+            {devices.length > 0 && (
+              <div className="filters">
+                <div className="filter-group">
+                  <span className="filter-label">Status</span>
+                  <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                    <option value="all">All</option>
+                    <option value="online">Online</option>
+                    <option value="unknown">Unknown</option>
+                    <option value="offline">Offline</option>
+                  </select>
+                </div>
+
+                <div className="filter-group">
+                  <span className="filter-label">Vendor</span>
+                  <select value={vendorFilter} onChange={(e) => setVendorFilter(e.target.value)}>
+                    <option value="all">All</option>
+                    {uniqueVendors.map(vendor => (
+                      <option key={vendor} value={vendor}>{vendor}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="filter-group">
+                  <span className="filter-label">Sort By</span>
+                  <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                    <option value="ip">IP Address</option>
+                    <option value="mac">MAC Address</option>
+                    <option value="vendor">Vendor</option>
+                    <option value="hostname">Hostname</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {devices.length === 0 && !scanning ? (
+              <div className="empty-state">
+                <div className="empty-state-icon">[ ]</div>
+                <h3>No Devices Found</h3>
+                <p>Run a scan to discover devices on your network</p>
+              </div>
+            ) : (
+              <div className="device-list">
+                <div className="device-list-header">
+                  <div>#</div>
+                  <div>IP Address</div>
+                  <div>MAC Address</div>
+                  <div>Vendor</div>
+                  <div>Hostname</div>
+                  <div>Bonjour Name</div>
+                  <div>Status</div>
+                </div>
+                {filteredAndSortedDevices.map((device, index) => (
+                  <div key={index} className="device-item">
+                    <div className="device-number">{String(index + 1).padStart(2, '0')}</div>
+                    <div className="device-ip" onClick={(e) => copyToClipboard(device.ip, e)}>{device.ip}</div>
+                    <div className="device-mac" onClick={(e) => copyToClipboard(device.mac, e)}>{device.mac}</div>
+                    <div className="device-vendor">{device.vendor || '---'}</div>
+                    <div className="device-hostname">{device.hostname || '---'}</div>
+                    <div className="device-bonjour">{device.bambuName || device.bonjourName || '---'}</div>
+                    <div className={`status-indicator status-${device.status || 'unknown'}`}></div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {copiedTooltip && (
+            <div
+              className="copied-tooltip"
+              style={{
+                left: `${copiedTooltip.x}px`,
+                top: `${copiedTooltip.y}px`,
+                transform: 'translateX(-50%)'
+              }}
+            >
+              {copiedTooltip.text}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
